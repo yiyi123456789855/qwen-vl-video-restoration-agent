@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+
+# Environments and editors
+.venv/
+venv/
+.conda/
+.vscode/
+.idea/
+
+# Secrets and local configuration
+.env
+.env.*
+*.pem
+*.key
+
+# Model weights and training checkpoints
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+checkpoint-*/
+
+# Local datasets and generated samples
+data/
+datasets/raw/
+datasets/processed/
+
+# Runtime and evaluation outputs
+outputs/
+results/
+logs/
+runs/
+wandb/
+
+# Archives and temporary files
+*.zip
+*.tar
+*.tar.gz
+*.tmp
+*.log
+
+# Keep small, selected portfolio figures under assets/
+!assets/
+!assets/*.png
+!assets/*.jpg
+!assets/*.jpeg
