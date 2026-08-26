@@ -92,7 +92,13 @@ Zero-shot将35/50个干净序列错误送入去噪模型；QLoRA正确处理全�
 干净输入的文件级原样保留率为100%，输入输出像素MAE为0。Pipeline评测PSNR与原去噪测试结果35.2373 dB相差约0.031 dB，差异主要来自8-bit PNG保存和评测路径。
 
 ## 定性结果
+### 噪声视频复原结果
 
+![噪声视频复原对比](assets/noisy_restoration_cases.png)
+
+### Zero-shot干净图误触发案例
+
+![Zero-shot误触发对比](assets/clean_false_trigger_case.png)
 运行可视化脚本后，将生成：
 
 ```text
