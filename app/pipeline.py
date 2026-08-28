@@ -1,4 +1,5 @@
 import argparse
+import math
 import json
 import os
 import re
@@ -7,7 +8,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-
+from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -39,7 +40,98 @@ def list_images(folder: Path):
         key=natural_key,
     )
 
+def select_uniform_frames(
+    frame_paths,
+    frame_count,
+):
+    if frame_count < 1:
+        raise ValueError(
+            "diagnosis_frames必须大于等于1"
+        )
 
+    sample_count = min(
+        frame_count,
+        len(frame_paths),
+    )
+
+    if sample_count == 1:
+        return [
+            frame_paths[len(frame_paths) // 2]
+        ]
+
+    last_index = len(frame_paths) - 1
+
+    indices = [
+        round(
+            index
+            * last_index
+            / (sample_count - 1)
+        )
+        for index in range(sample_count)
+    ]
+
+    return [
+        frame_paths[index]
+        for index in indices
+    ]
+
+
+def create_contact_sheet(
+    frame_paths,
+    output_path,
+):
+    if not frame_paths:
+        raise RuntimeError(
+            "无法为零张图像创建拼图"
+        )
+
+    cell_width = 320
+    cell_height = 180
+    columns = min(3, len(frame_paths))
+    rows = math.ceil(
+        len(frame_paths) / columns
+    )
+
+    sheet = Image.new(
+        "RGB",
+        (
+            columns * cell_width,
+            rows * cell_height,
+        ),
+        color="black",
+    )
+
+    for index, frame_path in enumerate(
+        frame_paths
+    ):
+        with Image.open(frame_path) as source:
+            image = source.convert("RGB")
+            image.thumbnail(
+                (cell_width, cell_height),
+                Image.Resampling.LANCZOS,
+            )
+
+        column = index % columns
+        row = index // columns
+
+        x = (
+            column * cell_width
+            + (cell_width - image.width) // 2
+        )
+        y = (
+            row * cell_height
+            + (cell_height - image.height) // 2
+        )
+
+        sheet.paste(image, (x, y))
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    sheet.save(output_path)
+
+    return output_path
 def run_qwen_diagnosis(args, image_path: Path, output_path: Path):
     command = [
         sys.executable,
@@ -85,6 +177,19 @@ def main():
         "--qwen_adapter",
         default=None,
         help="可选；不传时运行Zero-shot基座模型",
+    )
+    parser.add_argument(
+        "--diagnosis_mode",
+        choices=[
+            "single",
+            "contact_sheet",
+        ],
+        default="single",
+    )
+    parser.add_argument(
+        "--diagnosis_frames",
+        type=int,
+        default=5,
     )
     parser.add_argument("--denoise_test_script", required=True)
     parser.add_argument("--denoise_weights", required=True)
@@ -148,12 +253,33 @@ def main():
     diagnosis_path = output_dir / "diagnosis.json"
     restored_dir = output_dir / "restored"
     representative = frame_paths[len(frame_paths) // 2]
-    started = time.perf_counter()
+    sampled_frames = select_uniform_frames(
+        frame_paths,
+        args.diagnosis_frames,
+    )
 
-    print(f"[1/3] Diagnosing representative frame: {representative}")
+    contact_sheet_path = None
+    diagnosis_input = representative
+
+    if args.diagnosis_mode == "contact_sheet":
+        contact_sheet_path = (
+            output_dir
+            / "diagnosis_contact_sheet.png"
+        )
+
+        diagnosis_input = create_contact_sheet(
+            sampled_frames,
+            contact_sheet_path,
+        )
+    started = time.perf_counter()
+    print(
+        "[1/3] Diagnosing "
+        f"{args.diagnosis_mode} input: "
+        f"{diagnosis_input}"
+    )
     run_qwen_diagnosis(
         args,
-        representative,
+        diagnosis_input,
         diagnosis_path,
     )
     diagnosis_report = json.loads(
@@ -239,6 +365,19 @@ def main():
         "input_dir": str(input_dir),
         "output_dir": str(output_dir),
         "representative_frame": str(representative),
+        "diagnosis_mode": args.diagnosis_mode,
+        "diagnosis_frames": [
+            str(path)
+            for path in sampled_frames
+        ],
+        "diagnosis_input": str(
+            diagnosis_input
+        ),
+        "contact_sheet": (
+            None
+            if contact_sheet_path is None
+            else str(contact_sheet_path)
+        ),
         "diagnosis": diagnosis,
         "selected_tool": tool,
         "action": action,

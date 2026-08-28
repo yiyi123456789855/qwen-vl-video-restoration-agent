@@ -23,7 +23,9 @@ degradation只能选择：clean、noise、blur、jpeg、low_light、mixed、unkn
 severity只能选择：none、mild、medium、severe
 recommended_tool只能选择：
 none、denoise、deblur、enhance_lowlight、manual_review
-
+输入可能是单帧，也可能是按时间顺序排列的多帧拼图。
+如果是拼图，请综合所有子图，只判断跨帧持续出现的主要退化，
+不要把拼图边界或用于填充的黑色区域当作图像退化。
 判断原则：
 1. 如果没有明确可见的退化，判断为clean、none、none。
 2. 随机颗粒、孤立亮暗点或结构被随机噪声破坏，判断为noise，并选择denoise。
