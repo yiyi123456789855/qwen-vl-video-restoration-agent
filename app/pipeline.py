@@ -15,7 +15,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from tools.video_denoiser import VideoDenoiser
 from tools.restormer_deblur import RestormerDeblurrer
-
+from tools.retinexformer_lowlight import (
+    RetinexformerLowLightEnhancer,
+)
 IMAGE_SUFFIXES = {
     ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"
 }
@@ -109,8 +111,25 @@ def main():
         default=64,
     )
     parser.add_argument(
+        "--retinexformer_repo",
+        default=None,
+    )
+    parser.add_argument(
+        "--retinexformer_weights",
+        default=None,
+    )
+    parser.add_argument(
+        "--retinexformer_config",
+        default=None,
+    )
+    parser.add_argument(
         "--force_tool",
-        choices=["none", "denoise", "deblur"],
+        choices=[
+            "none",
+            "denoise",
+            "deblur",
+            "enhance_lowlight",
+        ],
         default=None,
         help="仅用于工具链测试",
     )
@@ -149,6 +168,7 @@ def main():
 
     denoise_report = None
     deblur_report = None
+    lowlight_report = None
     if tool == "denoise":
         print("[2/3] Tool selected: denoise")
         denoiser = VideoDenoiser(
@@ -185,6 +205,31 @@ def main():
         )
 
         action = "deblur"
+    elif tool == "enhance_lowlight":
+        if not args.retinexformer_repo:
+            raise RuntimeError(
+                "模型选择了enhance_lowlight，"
+                "但没有提供--retinexformer_repo"
+            )
+
+        print(
+            "[2/3] Tool selected: "
+            "enhance_lowlight"
+        )
+
+        enhancer = RetinexformerLowLightEnhancer(
+            repo_dir=args.retinexformer_repo,
+            weights=args.retinexformer_weights,
+            config=args.retinexformer_config,
+            device=args.device,
+        )
+
+        lowlight_report = enhancer.run_sequence(
+            str(input_dir),
+            str(restored_dir),
+        )
+
+        action = "enhance_lowlight"
     else:
         print(f"[2/3] Tool selected: {tool}; copying original frames")
         copy_sequence(frame_paths, restored_dir)
@@ -207,6 +252,7 @@ def main():
         "force_tool": args.force_tool,
         "denoise": denoise_report,
         "deblur": deblur_report,
+        "lowlight": lowlight_report,
         "total_runtime_seconds": round(
             time.perf_counter() - started,
             3,
