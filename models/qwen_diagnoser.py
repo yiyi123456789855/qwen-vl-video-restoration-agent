@@ -2,10 +2,12 @@ import argparse
 import json
 import time
 from pathlib import Path
+
 import numpy as np
 from PIL import Image
 import torch
 from peft import PeftModel
+from qwen_vl_utils import process_vision_info
 from transformers import (
     AutoProcessor,
     BitsAndBytesConfig,
@@ -23,9 +25,10 @@ degradation只能选择：clean、noise、blur、jpeg、low_light、mixed、unkn
 severity只能选择：none、mild、medium、severe
 recommended_tool只能选择：
 none、denoise、deblur、enhance_lowlight、manual_review
-输入可能是单帧，也可能是按时间顺序排列的多帧拼图。
+输入可能是单帧、多帧拼图，也可能是按时间顺序输入的原生视频帧序列。
 如果是拼图，请综合所有子图，只判断跨帧持续出现的主要退化，
 不要把拼图边界或用于填充的黑色区域当作图像退化。
+如果是原生视频帧序列，请综合全部帧判断持续出现的主要退化。
 判断原则：
 1. 如果没有明确可见的退化，判断为clean、none、none。
 2. 随机颗粒、孤立亮暗点或结构被随机噪声破坏，判断为noise，并选择denoise。
@@ -99,6 +102,7 @@ def parse_json(text: str) -> dict:
     result.setdefault("reason", "")
     return result
 
+
 def compute_luminance_stats(image_path):
     with Image.open(image_path) as image:
         rgb = np.asarray(
@@ -131,9 +135,18 @@ def compute_luminance_stats(image_path):
         ),
     }
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image", required=True)
+    parser.add_argument(
+        "--image",
+        default=None,
+    )
+    parser.add_argument(
+        "--video_frames",
+        nargs="+",
+        default=None,
+    )
     parser.add_argument(
         "--model",
         default=MODEL_ID,
@@ -149,9 +162,48 @@ def main():
     )
     args = parser.parse_args()
 
-    image_path = Path(args.image).expanduser().resolve()
-    if not image_path.is_file():
-        raise FileNotFoundError(f"图像不存在：{image_path}")
+    if bool(args.image) == bool(args.video_frames):
+        raise RuntimeError(
+            "--image和--video_frames必须且只能提供一个"
+        )
+
+    video_paths = None
+
+    if args.video_frames:
+        video_paths = [
+            Path(path).expanduser().resolve()
+            for path in args.video_frames
+        ]
+
+        missing_paths = [
+            path
+            for path in video_paths
+            if not path.is_file()
+        ]
+
+        if missing_paths:
+            raise FileNotFoundError(
+                f"视频帧不存在：{missing_paths}"
+            )
+
+        image_path = video_paths[
+            len(video_paths) // 2
+        ]
+        input_type = "video"
+    else:
+        image_path = (
+            Path(args.image)
+            .expanduser()
+            .resolve()
+        )
+
+        if not image_path.is_file():
+            raise FileNotFoundError(
+                f"图像不存在：{image_path}"
+            )
+
+        input_type = "image"
+
     luminance_stats = compute_luminance_stats(
         image_path
     )
@@ -255,14 +307,28 @@ enhance_lowlight。若图像是有意使用黑色背景的辐射、
 
     model.eval()
 
+    if video_paths is None:
+        visual_input = {
+            "type": "image",
+            "path": str(image_path),
+        }
+    else:
+        visual_input = {
+            "type": "video",
+            "video": [
+                path.as_uri()
+                for path in video_paths
+            ],
+            "fps": 1.0,
+            "min_pixels": 128 * 28 * 28,
+            "max_pixels": 256 * 28 * 28,
+        }
+
     conversation = [
         {
             "role": "user",
             "content": [
-                {
-                    "type": "image",
-                    "path": str(image_path),
-                },
+                visual_input,
                 {
                     "type": "text",
                     "text": diagnostic_prompt,
@@ -271,14 +337,48 @@ enhance_lowlight。若图像是有意使用黑色背景的辐射、
         }
     ]
 
-    print("[3/4] Processing image...", flush=True)
-    inputs = processor.apply_chat_template(
-        conversation,
-        add_generation_prompt=True,
-        tokenize=True,
-        return_dict=True,
-        return_tensors="pt",
-    ).to(model.device)
+    print("[3/4] Processing visual input...", flush=True)
+
+    if video_paths is None:
+        inputs = processor.apply_chat_template(
+            conversation,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+        ).to(model.device)
+    else:
+        prompt_text = processor.apply_chat_template(
+            conversation,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+
+        (
+            image_inputs,
+            video_inputs,
+            video_kwargs,
+        ) = process_vision_info(
+            conversation,
+            return_video_kwargs=True,
+        )
+
+        fps_value = video_kwargs.get("fps")
+
+        if isinstance(
+            fps_value,
+            (list, tuple),
+        ):
+            video_kwargs["fps"] = fps_value[0]
+
+        inputs = processor(
+            text=[prompt_text],
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+            **video_kwargs,
+        ).to(model.device)
 
     torch.cuda.reset_peak_memory_stats()
     start_time = time.perf_counter()
@@ -304,6 +404,15 @@ enhance_lowlight。若图像是有意使用黑色背景的辐射、
     diagnosis = parse_json(raw_text)
     report = {
         "image": str(image_path),
+        "input_type": input_type,
+        "video_frames": (
+            None
+            if video_paths is None
+            else [
+                str(path)
+                for path in video_paths
+            ]
+        ),
         "luminance_stats": luminance_stats,
         "brightness_hint": brightness_hint,
         "model": args.model,

@@ -1,6 +1,6 @@
 import argparse
-import math
 import json
+import math
 import os
 import re
 import shutil
@@ -19,6 +19,7 @@ from tools.restormer_deblur import RestormerDeblurrer
 from tools.retinexformer_lowlight import (
     RetinexformerLowLightEnhancer,
 )
+
 IMAGE_SUFFIXES = {
     ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"
 }
@@ -39,6 +40,7 @@ def list_images(folder: Path):
         ],
         key=natural_key,
     )
+
 
 def select_uniform_frames(
     frame_paths,
@@ -132,18 +134,40 @@ def create_contact_sheet(
     sheet.save(output_path)
 
     return output_path
-def run_qwen_diagnosis(args, image_path: Path, output_path: Path):
+
+
+def run_qwen_diagnosis(
+    args,
+    image_path: Path,
+    output_path: Path,
+    video_paths=None,
+):
     command = [
         sys.executable,
         "-u",
         str(Path(args.qwen_script).expanduser().resolve()),
         "--model",
         args.qwen_model,
-        "--image",
-        str(image_path),
-        "--output",
-        str(output_path),
     ]
+
+    if video_paths:
+        command.append("--video_frames")
+        command.extend(str(path) for path in video_paths)
+    else:
+        command.extend(
+            [
+                "--image",
+                str(image_path),
+            ]
+        )
+
+    command.extend(
+        [
+            "--output",
+            str(output_path),
+        ]
+    )
+
     if args.qwen_adapter:
         command.extend(
             [
@@ -183,6 +207,7 @@ def main():
         choices=[
             "single",
             "contact_sheet",
+            "native_video",
         ],
         default="single",
     )
@@ -259,6 +284,7 @@ def main():
     )
 
     contact_sheet_path = None
+    video_diagnosis_frames = None
     diagnosis_input = representative
 
     if args.diagnosis_mode == "contact_sheet":
@@ -271,16 +297,29 @@ def main():
             sampled_frames,
             contact_sheet_path,
         )
+
+    elif args.diagnosis_mode == "native_video":
+        video_diagnosis_frames = sampled_frames
+
     started = time.perf_counter()
+
+    if video_diagnosis_frames is None:
+        diagnosis_description = str(diagnosis_input)
+    else:
+        diagnosis_description = (
+            f"{len(video_diagnosis_frames)} ordered frames"
+        )
+
     print(
         "[1/3] Diagnosing "
         f"{args.diagnosis_mode} input: "
-        f"{diagnosis_input}"
+        f"{diagnosis_description}"
     )
     run_qwen_diagnosis(
         args,
         diagnosis_input,
         diagnosis_path,
+        video_paths=video_diagnosis_frames,
     )
     diagnosis_report = json.loads(
         diagnosis_path.read_text(encoding="utf-8")
@@ -378,8 +417,15 @@ def main():
             if contact_sheet_path is None
             else str(contact_sheet_path)
         ),
+        "native_video_frames": (
+            None
+            if video_diagnosis_frames is None
+            else [
+                str(path)
+                for path in video_diagnosis_frames
+            ]
+        ),
         "diagnosis": diagnosis,
-        "selected_tool": tool,
         "action": action,
         "qwen_adapter": (
             str(Path(args.qwen_adapter).expanduser().resolve())
