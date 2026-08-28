@@ -49,3 +49,5 @@ wandb/
 !assets/*.png
 !assets/*.jpg
 !assets/*.jpeg
+samples/
+third_party/
