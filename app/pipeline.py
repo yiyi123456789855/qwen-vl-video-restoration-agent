@@ -263,6 +263,14 @@ def main():
         default=None,
         help="仅用于工具链测试",
     )
+    parser.add_argument(
+        "--diagnosis_only",
+        action="store_true",
+        help=(
+            "只运行退化诊断并保存报告，"
+            "不执行任何复原工具"
+        ),
+    )
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir).expanduser().resolve()
@@ -334,7 +342,13 @@ def main():
     denoise_report = None
     deblur_report = None
     lowlight_report = None
-    if tool == "denoise":
+    if args.diagnosis_only:
+        print(
+            "[2/3] Diagnosis-only mode: "
+            f"predicted tool={tool}; restoration skipped"
+        )
+        action = "diagnosis_only"
+    elif tool == "denoise":
         print("[2/3] Tool selected: denoise")
         denoiser = VideoDenoiser(
             test_script=args.denoise_test_script,
@@ -435,6 +449,7 @@ def main():
         "model_selected_tool": model_selected_tool,
         "selected_tool": tool,
         "force_tool": args.force_tool,
+        "diagnosis_only": args.diagnosis_only,
         "denoise": denoise_report,
         "deblur": deblur_report,
         "lowlight": lowlight_report,
