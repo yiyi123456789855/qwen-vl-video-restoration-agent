@@ -14,7 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.video_denoiser import VideoDenoiser
-
+from tools.restormer_deblur import RestormerDeblurrer
 
 IMAGE_SUFFIXES = {
     ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"
@@ -90,6 +90,30 @@ def main():
     parser.add_argument("--cuda_visible_devices", default="0")
     parser.add_argument("--tile", type=int, default=512)
     parser.add_argument("--overlap", type=int, default=128)
+    parser.add_argument(
+        "--restormer_repo",
+        default=None,
+    )
+    parser.add_argument(
+        "--restormer_python",
+        default=sys.executable,
+    )
+    parser.add_argument(
+        "--restormer_tile",
+        type=int,
+        default=512,
+    )
+    parser.add_argument(
+        "--restormer_overlap",
+        type=int,
+        default=64,
+    )
+    parser.add_argument(
+        "--force_tool",
+        choices=["none", "denoise", "deblur"],
+        default=None,
+        help="仅用于工具链测试",
+    )
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir).expanduser().resolve()
@@ -117,9 +141,14 @@ def main():
         diagnosis_path.read_text(encoding="utf-8")
     )
     diagnosis = diagnosis_report["diagnosis"]
-    tool = diagnosis.get("recommended_tool", "none")
+    model_selected_tool = diagnosis.get(
+        "recommended_tool",
+        "none",
+    )
+    tool = args.force_tool or model_selected_tool
 
     denoise_report = None
+    deblur_report = None
     if tool == "denoise":
         print("[2/3] Tool selected: denoise")
         denoiser = VideoDenoiser(
@@ -134,6 +163,28 @@ def main():
             str(restored_dir),
         )
         action = "denoise"
+    elif tool == "deblur":
+        if not args.restormer_repo:
+            raise RuntimeError(
+                "模型选择了deblur，"
+                "但没有提供--restormer_repo"
+            )
+
+        print("[2/3] Tool selected: deblur")
+
+        deblurrer = RestormerDeblurrer(
+            repo_dir=args.restormer_repo,
+            python_executable=args.restormer_python,
+            tile=args.restormer_tile,
+            tile_overlap=args.restormer_overlap,
+        )
+
+        deblur_report = deblurrer.run_sequence(
+            str(input_dir),
+            str(restored_dir),
+        )
+
+        action = "deblur"
     else:
         print(f"[2/3] Tool selected: {tool}; copying original frames")
         copy_sequence(frame_paths, restored_dir)
@@ -151,7 +202,11 @@ def main():
             if args.qwen_adapter
             else None
         ),
+        "model_selected_tool": model_selected_tool,
+        "selected_tool": tool,
+        "force_tool": args.force_tool,
         "denoise": denoise_report,
+        "deblur": deblur_report,
         "total_runtime_seconds": round(
             time.perf_counter() - started,
             3,
