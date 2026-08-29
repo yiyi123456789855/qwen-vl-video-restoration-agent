@@ -1,5 +1,6 @@
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -13,6 +14,13 @@ from transformers import (
     BitsAndBytesConfig,
     Qwen2_5_VLForConditionalGeneration,
 )
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from models.objective_prior import analyze_sequence
 
 
 MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct"
@@ -136,6 +144,65 @@ def compute_luminance_stats(image_path):
     }
 
 
+def fuse_diagnoses(raw_diagnosis, objective_prior):
+    prior_confidence = float(
+        objective_prior.get("confidence", 0.0)
+    )
+    prior_degradation = objective_prior.get(
+        "degradation",
+        "unknown",
+    )
+    prior_tool = objective_prior.get(
+        "recommended_tool",
+        "manual_review",
+    )
+
+    prior_is_actionable = (
+        prior_degradation != "unknown"
+        and prior_tool != "manual_review"
+        and prior_confidence >= 0.65
+    )
+
+    if not prior_is_actionable:
+        return (
+            {
+                "degradation": "unknown",
+                "severity": "none",
+                "recommended_tool": "manual_review",
+                "confidence": round(prior_confidence, 4),
+                "reason": "客观先验不确定，转人工复核",
+            },
+            "abstain_objective_uncertain",
+        )
+
+    agrees = (
+        raw_diagnosis.get("degradation")
+        == prior_degradation
+        and raw_diagnosis.get("recommended_tool")
+        == prior_tool
+    )
+
+    diagnosis = {
+        "degradation": prior_degradation,
+        "severity": objective_prior.get(
+            "severity",
+            "none",
+        ),
+        "recommended_tool": prior_tool,
+        "confidence": round(prior_confidence, 4),
+        "reason": objective_prior.get(
+            "reason",
+            "客观先验达到路由条件",
+        ),
+    }
+    decision_source = (
+        "vlm_objective_agreement"
+        if agrees
+        else "objective_prior_override"
+    )
+    return diagnosis, decision_source
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -146,6 +213,12 @@ def main():
         "--video_frames",
         nargs="+",
         default=None,
+    )
+    parser.add_argument(
+        "--metric_frames",
+        nargs="+",
+        default=None,
+        help="用于客观指标计算的原始采样帧",
     )
     parser.add_argument(
         "--model",
@@ -204,6 +277,33 @@ def main():
 
         input_type = "image"
 
+    if args.metric_frames:
+        metric_paths = [
+            Path(path).expanduser().resolve()
+            for path in args.metric_frames
+        ]
+    elif video_paths is not None:
+        metric_paths = video_paths
+    else:
+        metric_paths = [image_path]
+
+    missing_metric_paths = [
+        path
+        for path in metric_paths
+        if not path.is_file()
+    ]
+    if missing_metric_paths:
+        raise FileNotFoundError(
+            f"客观指标帧不存在：{missing_metric_paths}"
+        )
+
+    objective_report = analyze_sequence(
+        metric_paths
+    )
+    objective_prior = objective_report[
+        "objective_prior"
+    ]
+
     luminance_stats = compute_luminance_stats(
         image_path
     )
@@ -255,6 +355,14 @@ enhance_lowlight。若图像是有意使用黑色背景的辐射、
             ensure_ascii=False,
         ),
         brightness_hint,
+        flush=True,
+    )
+    print(
+        "[Objective prior]",
+        json.dumps(
+            objective_prior,
+            ensure_ascii=False,
+        ),
         flush=True,
     )
     output_path = Path(args.output).expanduser().resolve()
@@ -401,7 +509,11 @@ enhance_lowlight。若图像是有意使用黑色背景的辐射、
         clean_up_tokenization_spaces=False,
     )[0]
 
-    diagnosis = parse_json(raw_text)
+    raw_diagnosis = parse_json(raw_text)
+    diagnosis, decision_source = fuse_diagnoses(
+        raw_diagnosis,
+        objective_prior,
+    )
     report = {
         "image": str(image_path),
         "input_type": input_type,
@@ -415,11 +527,21 @@ enhance_lowlight。若图像是有意使用黑色背景的辐射、
         ),
         "luminance_stats": luminance_stats,
         "brightness_hint": brightness_hint,
+        "metric_frames": [
+            str(path)
+            for path in metric_paths
+        ],
+        "objective_features": objective_report[
+            "features"
+        ],
+        "objective_prior": objective_prior,
         "model": args.model,
         "adapter": (
             None if adapter_path is None else str(adapter_path)
         ),
+        "raw_diagnosis": raw_diagnosis,
         "diagnosis": diagnosis,
+        "decision_source": decision_source,
         "raw_output": raw_text,
         "inference_seconds": round(elapsed, 3),
         "peak_gpu_memory_gb": round(
@@ -435,8 +557,17 @@ enhance_lowlight。若图像是有意使用黑色背景的辐射、
 
     print("\nRaw output:")
     print(raw_text)
-    print("\nParsed result:")
+    print("\nRaw parsed diagnosis:")
+    print(
+        json.dumps(
+            raw_diagnosis,
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    print("\nFused diagnosis:")
     print(json.dumps(diagnosis, ensure_ascii=False, indent=2))
+    print(f"Decision source: {decision_source}")
     print(f"\nSaved to: {output_path}")
     print(f"Inference time: {elapsed:.3f} seconds")
     print(

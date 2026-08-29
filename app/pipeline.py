@@ -141,6 +141,7 @@ def run_qwen_diagnosis(
     image_path: Path,
     output_path: Path,
     video_paths=None,
+    metric_paths=None,
 ):
     command = [
         sys.executable,
@@ -167,6 +168,13 @@ def run_qwen_diagnosis(
             str(output_path),
         ]
     )
+
+    if metric_paths:
+        command.append("--metric_frames")
+        command.extend(
+            str(path)
+            for path in metric_paths
+        )
 
     if args.qwen_adapter:
         command.extend(
@@ -328,11 +336,16 @@ def main():
         diagnosis_input,
         diagnosis_path,
         video_paths=video_diagnosis_frames,
+        metric_paths=sampled_frames,
     )
     diagnosis_report = json.loads(
         diagnosis_path.read_text(encoding="utf-8")
     )
     diagnosis = diagnosis_report["diagnosis"]
+    raw_diagnosis = diagnosis_report.get(
+        "raw_diagnosis",
+        diagnosis,
+    )
     model_selected_tool = diagnosis.get(
         "recommended_tool",
         "none",
@@ -440,6 +453,16 @@ def main():
             ]
         ),
         "diagnosis": diagnosis,
+        "raw_diagnosis": raw_diagnosis,
+        "objective_prior": diagnosis_report.get(
+            "objective_prior"
+        ),
+        "decision_source": diagnosis_report.get(
+            "decision_source"
+        ),
+        "routing_confidence": diagnosis.get(
+            "confidence"
+        ),
         "action": action,
         "qwen_adapter": (
             str(Path(args.qwen_adapter).expanduser().resolve())
@@ -447,6 +470,9 @@ def main():
             else None
         ),
         "model_selected_tool": model_selected_tool,
+        "raw_model_selected_tool": (
+            raw_diagnosis.get("recommended_tool")
+        ),
         "selected_tool": tool,
         "force_tool": args.force_tool,
         "diagnosis_only": args.diagnosis_only,

@@ -26,8 +26,12 @@ CSV_FIELDS = [
     "degradation",
     "severity",
     "expected_tool",
+    "raw_selected_tool",
     "selected_tool",
+    "raw_route_correct",
     "route_correct",
+    "decision_source",
+    "routing_confidence",
     "diagnosis_seconds",
     "peak_gpu_memory_gb",
     "tool_runtime_seconds",
@@ -78,10 +82,19 @@ def collect_rows(outputs_dir):
             "model_selected_tool",
             run_report.get("selected_tool"),
         )
+        raw_selected_tool = run_report.get(
+            "raw_model_selected_tool",
+            selected_tool,
+        )
         route_correct = (
             None
             if expected_tool is None
             else selected_tool == expected_tool
+        )
+        raw_route_correct = (
+            None
+            if expected_tool is None
+            else raw_selected_tool == expected_tool
         )
 
         tool_report = first_tool_report(run_report)
@@ -93,8 +106,16 @@ def collect_rows(outputs_dir):
                 "degradation": diagnosis.get("degradation"),
                 "severity": diagnosis.get("severity"),
                 "expected_tool": expected_tool,
+                "raw_selected_tool": raw_selected_tool,
                 "selected_tool": selected_tool,
+                "raw_route_correct": raw_route_correct,
                 "route_correct": route_correct,
+                "decision_source": run_report.get(
+                    "decision_source"
+                ),
+                "routing_confidence": run_report.get(
+                    "routing_confidence"
+                ),
                 "diagnosis_seconds": diagnosis_report.get(
                     "inference_seconds"
                 ),
@@ -193,6 +214,15 @@ def aggregate_by_mode(rows):
             row["route_correct"] is True
             for row in scored
         )
+        raw_scored = [
+            row
+            for row in mode_rows
+            if row["raw_route_correct"] is not None
+        ]
+        raw_correct = sum(
+            row["raw_route_correct"] is True
+            for row in raw_scored
+        )
 
         summaries.append(
             {
@@ -200,6 +230,12 @@ def aggregate_by_mode(rows):
                 "runs": len(mode_rows),
                 "scored_runs": len(scored),
                 "correct_runs": correct,
+                "raw_correct_runs": raw_correct,
+                "raw_route_accuracy": (
+                    raw_correct / len(raw_scored)
+                    if raw_scored
+                    else None
+                ),
                 "route_accuracy": (
                     correct / len(scored)
                     if scored
@@ -252,8 +288,8 @@ def write_markdown(rows, summaries, path):
         "",
         "## Per-run results",
         "",
-        "| Case | Mode | Degradation | Expected | Selected | Correct | Diagnosis s | Peak GB | Total s |",
-        "|---|---|---|---|---|---:|---:|---:|---:|",
+        "| Case | Mode | Degradation | Expected | Raw tool | Fused tool | Raw correct | Fused correct | Source | Confidence | Diagnosis s | Peak GB | Total s |",
+        "|---|---|---|---|---|---|---:|---:|---|---:|---:|---:|---:|",
     ]
 
     for row in rows:
@@ -265,8 +301,12 @@ def write_markdown(rows, summaries, path):
                     display(row["mode"]),
                     display(row["degradation"]),
                     display(row["expected_tool"]),
+                    display(row["raw_selected_tool"]),
                     display(row["selected_tool"]),
+                    display(row["raw_route_correct"]),
                     display(row["route_correct"]),
+                    display(row["decision_source"]),
+                    display(row["routing_confidence"]),
                     display(row["diagnosis_seconds"]),
                     display(row["peak_gpu_memory_gb"]),
                     display(row["total_runtime_seconds"]),
@@ -280,17 +320,23 @@ def write_markdown(rows, summaries, path):
             "",
             "## Aggregate by mode",
             "",
-            "| Mode | Runs | Accuracy | Mean diagnosis s | Mean peak GB | Mean total s |",
-            "|---|---:|---:|---:|---:|---:|",
+            "| Mode | Runs | Raw accuracy | Fused accuracy | Mean diagnosis s | Mean peak GB | Mean total s |",
+            "|---|---:|---:|---:|---:|---:|---:|",
         ]
     )
 
     for summary in summaries:
         accuracy = summary["route_accuracy"]
+        raw_accuracy = summary["raw_route_accuracy"]
         accuracy_text = (
             "-"
             if accuracy is None
             else f"{accuracy * 100:.1f}%"
+        )
+        raw_accuracy_text = (
+            "-"
+            if raw_accuracy is None
+            else f"{raw_accuracy * 100:.1f}%"
         )
         lines.append(
             "| "
@@ -298,6 +344,7 @@ def write_markdown(rows, summaries, path):
                 [
                     summary["mode"],
                     str(summary["runs"]),
+                    raw_accuracy_text,
                     accuracy_text,
                     display(summary["mean_diagnosis_seconds"]),
                     display(summary["mean_peak_gpu_memory_gb"]),
