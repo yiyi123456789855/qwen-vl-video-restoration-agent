@@ -1,0 +1,789 @@
+{
+  "benchmark_id": "gopro_heldout_v2",
+  "split": "final_test",
+  "seed": 5090,
+  "frame_count_per_case": 5,
+  "development_scene_exclusions": [
+    "GOPR0384_11_00",
+    "GOPR0384_11_05",
+    "GOPR0385_11_01",
+    "GOPR0854_11_00",
+    "GOPR0881_11_01"
+  ],
+  "scenes": [
+    "GOPR0396_11_00",
+    "GOPR0868_11_00",
+    "GOPR0871_11_00"
+  ],
+  "case_count": 27,
+  "cases": [
+    {
+      "case_id": "GOPR0396_11_00__clean",
+      "scene_id": "GOPR0396_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0396_11_00__clean",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0396_11_00-000001.png",
+        "GOPR0396_11_00-000026.png",
+        "GOPR0396_11_00-000051.png",
+        "GOPR0396_11_00-000075.png",
+        "GOPR0396_11_00-000100.png"
+      ],
+      "expected_degradation": "clean",
+      "expected_tool": "none",
+      "is_ood": false,
+      "generation": {
+        "name": "clean"
+      }
+    },
+    {
+      "case_id": "GOPR0396_11_00__blur",
+      "scene_id": "GOPR0396_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0396_11_00__blur",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0396_11_00-000001.png",
+        "GOPR0396_11_00-000026.png",
+        "GOPR0396_11_00-000051.png",
+        "GOPR0396_11_00-000075.png",
+        "GOPR0396_11_00-000100.png"
+      ],
+      "expected_degradation": "blur",
+      "expected_tool": "deblur",
+      "is_ood": false,
+      "generation": {
+        "name": "blur",
+        "source": "GoPro input"
+      }
+    },
+    {
+      "case_id": "GOPR0396_11_00__noise_sigma12",
+      "scene_id": "GOPR0396_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0396_11_00__noise_sigma12",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0396_11_00-000001.png",
+        "GOPR0396_11_00-000026.png",
+        "GOPR0396_11_00-000051.png",
+        "GOPR0396_11_00-000075.png",
+        "GOPR0396_11_00-000100.png"
+      ],
+      "expected_degradation": "noise",
+      "expected_tool": "denoise",
+      "is_ood": false,
+      "generation": {
+        "name": "noise_sigma12",
+        "sigma": 12.0
+      }
+    },
+    {
+      "case_id": "GOPR0396_11_00__noise_sigma35",
+      "scene_id": "GOPR0396_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0396_11_00__noise_sigma35",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0396_11_00-000001.png",
+        "GOPR0396_11_00-000026.png",
+        "GOPR0396_11_00-000051.png",
+        "GOPR0396_11_00-000075.png",
+        "GOPR0396_11_00-000100.png"
+      ],
+      "expected_degradation": "noise",
+      "expected_tool": "denoise",
+      "is_ood": false,
+      "generation": {
+        "name": "noise_sigma35",
+        "sigma": 35.0
+      }
+    },
+    {
+      "case_id": "GOPR0396_11_00__lowlight_gain030",
+      "scene_id": "GOPR0396_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0396_11_00__lowlight_gain030",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0396_11_00-000001.png",
+        "GOPR0396_11_00-000026.png",
+        "GOPR0396_11_00-000051.png",
+        "GOPR0396_11_00-000075.png",
+        "GOPR0396_11_00-000100.png"
+      ],
+      "expected_degradation": "low_light",
+      "expected_tool": "enhance_lowlight",
+      "is_ood": false,
+      "generation": {
+        "name": "lowlight_gain030",
+        "gain": 0.3
+      }
+    },
+    {
+      "case_id": "GOPR0396_11_00__lowlight_gain012",
+      "scene_id": "GOPR0396_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0396_11_00__lowlight_gain012",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0396_11_00-000001.png",
+        "GOPR0396_11_00-000026.png",
+        "GOPR0396_11_00-000051.png",
+        "GOPR0396_11_00-000075.png",
+        "GOPR0396_11_00-000100.png"
+      ],
+      "expected_degradation": "low_light",
+      "expected_tool": "enhance_lowlight",
+      "is_ood": false,
+      "generation": {
+        "name": "lowlight_gain012",
+        "gain": 0.12
+      }
+    },
+    {
+      "case_id": "GOPR0396_11_00__jpeg_quality10",
+      "scene_id": "GOPR0396_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0396_11_00__jpeg_quality10",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.jpg",
+        "0002.jpg",
+        "0003.jpg",
+        "0004.jpg",
+        "0005.jpg"
+      ],
+      "source_frame_files": [
+        "GOPR0396_11_00-000001.png",
+        "GOPR0396_11_00-000026.png",
+        "GOPR0396_11_00-000051.png",
+        "GOPR0396_11_00-000075.png",
+        "GOPR0396_11_00-000100.png"
+      ],
+      "expected_degradation": "jpeg",
+      "expected_tool": "manual_review",
+      "is_ood": true,
+      "generation": {
+        "name": "jpeg_quality10",
+        "quality": 10
+      }
+    },
+    {
+      "case_id": "GOPR0396_11_00__mixed_blur_noise",
+      "scene_id": "GOPR0396_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0396_11_00__mixed_blur_noise",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0396_11_00-000001.png",
+        "GOPR0396_11_00-000026.png",
+        "GOPR0396_11_00-000051.png",
+        "GOPR0396_11_00-000075.png",
+        "GOPR0396_11_00-000100.png"
+      ],
+      "expected_degradation": "mixed",
+      "expected_tool": "manual_review",
+      "is_ood": true,
+      "generation": {
+        "name": "mixed_blur_noise",
+        "source": "GoPro input",
+        "sigma": 18.0
+      }
+    },
+    {
+      "case_id": "GOPR0396_11_00__unknown_color_cast",
+      "scene_id": "GOPR0396_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0396_11_00__unknown_color_cast",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0396_11_00-000001.png",
+        "GOPR0396_11_00-000026.png",
+        "GOPR0396_11_00-000051.png",
+        "GOPR0396_11_00-000075.png",
+        "GOPR0396_11_00-000100.png"
+      ],
+      "expected_degradation": "unknown",
+      "expected_tool": "manual_review",
+      "is_ood": true,
+      "generation": {
+        "name": "unknown_color_cast",
+        "rgb_scale": [
+          0.45,
+          1.0,
+          0.45
+        ]
+      }
+    },
+    {
+      "case_id": "GOPR0868_11_00__clean",
+      "scene_id": "GOPR0868_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0868_11_00__clean",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0868_11_00-000001.png",
+        "GOPR0868_11_00-000026.png",
+        "GOPR0868_11_00-000051.png",
+        "GOPR0868_11_00-000075.png",
+        "GOPR0868_11_00-000100.png"
+      ],
+      "expected_degradation": "clean",
+      "expected_tool": "none",
+      "is_ood": false,
+      "generation": {
+        "name": "clean"
+      }
+    },
+    {
+      "case_id": "GOPR0868_11_00__blur",
+      "scene_id": "GOPR0868_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0868_11_00__blur",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0868_11_00-000001.png",
+        "GOPR0868_11_00-000026.png",
+        "GOPR0868_11_00-000051.png",
+        "GOPR0868_11_00-000075.png",
+        "GOPR0868_11_00-000100.png"
+      ],
+      "expected_degradation": "blur",
+      "expected_tool": "deblur",
+      "is_ood": false,
+      "generation": {
+        "name": "blur",
+        "source": "GoPro input"
+      }
+    },
+    {
+      "case_id": "GOPR0868_11_00__noise_sigma12",
+      "scene_id": "GOPR0868_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0868_11_00__noise_sigma12",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0868_11_00-000001.png",
+        "GOPR0868_11_00-000026.png",
+        "GOPR0868_11_00-000051.png",
+        "GOPR0868_11_00-000075.png",
+        "GOPR0868_11_00-000100.png"
+      ],
+      "expected_degradation": "noise",
+      "expected_tool": "denoise",
+      "is_ood": false,
+      "generation": {
+        "name": "noise_sigma12",
+        "sigma": 12.0
+      }
+    },
+    {
+      "case_id": "GOPR0868_11_00__noise_sigma35",
+      "scene_id": "GOPR0868_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0868_11_00__noise_sigma35",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0868_11_00-000001.png",
+        "GOPR0868_11_00-000026.png",
+        "GOPR0868_11_00-000051.png",
+        "GOPR0868_11_00-000075.png",
+        "GOPR0868_11_00-000100.png"
+      ],
+      "expected_degradation": "noise",
+      "expected_tool": "denoise",
+      "is_ood": false,
+      "generation": {
+        "name": "noise_sigma35",
+        "sigma": 35.0
+      }
+    },
+    {
+      "case_id": "GOPR0868_11_00__lowlight_gain030",
+      "scene_id": "GOPR0868_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0868_11_00__lowlight_gain030",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0868_11_00-000001.png",
+        "GOPR0868_11_00-000026.png",
+        "GOPR0868_11_00-000051.png",
+        "GOPR0868_11_00-000075.png",
+        "GOPR0868_11_00-000100.png"
+      ],
+      "expected_degradation": "low_light",
+      "expected_tool": "enhance_lowlight",
+      "is_ood": false,
+      "generation": {
+        "name": "lowlight_gain030",
+        "gain": 0.3
+      }
+    },
+    {
+      "case_id": "GOPR0868_11_00__lowlight_gain012",
+      "scene_id": "GOPR0868_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0868_11_00__lowlight_gain012",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0868_11_00-000001.png",
+        "GOPR0868_11_00-000026.png",
+        "GOPR0868_11_00-000051.png",
+        "GOPR0868_11_00-000075.png",
+        "GOPR0868_11_00-000100.png"
+      ],
+      "expected_degradation": "low_light",
+      "expected_tool": "enhance_lowlight",
+      "is_ood": false,
+      "generation": {
+        "name": "lowlight_gain012",
+        "gain": 0.12
+      }
+    },
+    {
+      "case_id": "GOPR0868_11_00__jpeg_quality10",
+      "scene_id": "GOPR0868_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0868_11_00__jpeg_quality10",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.jpg",
+        "0002.jpg",
+        "0003.jpg",
+        "0004.jpg",
+        "0005.jpg"
+      ],
+      "source_frame_files": [
+        "GOPR0868_11_00-000001.png",
+        "GOPR0868_11_00-000026.png",
+        "GOPR0868_11_00-000051.png",
+        "GOPR0868_11_00-000075.png",
+        "GOPR0868_11_00-000100.png"
+      ],
+      "expected_degradation": "jpeg",
+      "expected_tool": "manual_review",
+      "is_ood": true,
+      "generation": {
+        "name": "jpeg_quality10",
+        "quality": 10
+      }
+    },
+    {
+      "case_id": "GOPR0868_11_00__mixed_blur_noise",
+      "scene_id": "GOPR0868_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0868_11_00__mixed_blur_noise",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0868_11_00-000001.png",
+        "GOPR0868_11_00-000026.png",
+        "GOPR0868_11_00-000051.png",
+        "GOPR0868_11_00-000075.png",
+        "GOPR0868_11_00-000100.png"
+      ],
+      "expected_degradation": "mixed",
+      "expected_tool": "manual_review",
+      "is_ood": true,
+      "generation": {
+        "name": "mixed_blur_noise",
+        "source": "GoPro input",
+        "sigma": 18.0
+      }
+    },
+    {
+      "case_id": "GOPR0868_11_00__unknown_color_cast",
+      "scene_id": "GOPR0868_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0868_11_00__unknown_color_cast",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0868_11_00-000001.png",
+        "GOPR0868_11_00-000026.png",
+        "GOPR0868_11_00-000051.png",
+        "GOPR0868_11_00-000075.png",
+        "GOPR0868_11_00-000100.png"
+      ],
+      "expected_degradation": "unknown",
+      "expected_tool": "manual_review",
+      "is_ood": true,
+      "generation": {
+        "name": "unknown_color_cast",
+        "rgb_scale": [
+          0.45,
+          1.0,
+          0.45
+        ]
+      }
+    },
+    {
+      "case_id": "GOPR0871_11_00__clean",
+      "scene_id": "GOPR0871_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0871_11_00__clean",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0871_11_00-000001.png",
+        "GOPR0871_11_00-000026.png",
+        "GOPR0871_11_00-000051.png",
+        "GOPR0871_11_00-000075.png",
+        "GOPR0871_11_00-000100.png"
+      ],
+      "expected_degradation": "clean",
+      "expected_tool": "none",
+      "is_ood": false,
+      "generation": {
+        "name": "clean"
+      }
+    },
+    {
+      "case_id": "GOPR0871_11_00__blur",
+      "scene_id": "GOPR0871_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0871_11_00__blur",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0871_11_00-000001.png",
+        "GOPR0871_11_00-000026.png",
+        "GOPR0871_11_00-000051.png",
+        "GOPR0871_11_00-000075.png",
+        "GOPR0871_11_00-000100.png"
+      ],
+      "expected_degradation": "blur",
+      "expected_tool": "deblur",
+      "is_ood": false,
+      "generation": {
+        "name": "blur",
+        "source": "GoPro input"
+      }
+    },
+    {
+      "case_id": "GOPR0871_11_00__noise_sigma12",
+      "scene_id": "GOPR0871_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0871_11_00__noise_sigma12",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0871_11_00-000001.png",
+        "GOPR0871_11_00-000026.png",
+        "GOPR0871_11_00-000051.png",
+        "GOPR0871_11_00-000075.png",
+        "GOPR0871_11_00-000100.png"
+      ],
+      "expected_degradation": "noise",
+      "expected_tool": "denoise",
+      "is_ood": false,
+      "generation": {
+        "name": "noise_sigma12",
+        "sigma": 12.0
+      }
+    },
+    {
+      "case_id": "GOPR0871_11_00__noise_sigma35",
+      "scene_id": "GOPR0871_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0871_11_00__noise_sigma35",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0871_11_00-000001.png",
+        "GOPR0871_11_00-000026.png",
+        "GOPR0871_11_00-000051.png",
+        "GOPR0871_11_00-000075.png",
+        "GOPR0871_11_00-000100.png"
+      ],
+      "expected_degradation": "noise",
+      "expected_tool": "denoise",
+      "is_ood": false,
+      "generation": {
+        "name": "noise_sigma35",
+        "sigma": 35.0
+      }
+    },
+    {
+      "case_id": "GOPR0871_11_00__lowlight_gain030",
+      "scene_id": "GOPR0871_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0871_11_00__lowlight_gain030",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0871_11_00-000001.png",
+        "GOPR0871_11_00-000026.png",
+        "GOPR0871_11_00-000051.png",
+        "GOPR0871_11_00-000075.png",
+        "GOPR0871_11_00-000100.png"
+      ],
+      "expected_degradation": "low_light",
+      "expected_tool": "enhance_lowlight",
+      "is_ood": false,
+      "generation": {
+        "name": "lowlight_gain030",
+        "gain": 0.3
+      }
+    },
+    {
+      "case_id": "GOPR0871_11_00__lowlight_gain012",
+      "scene_id": "GOPR0871_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0871_11_00__lowlight_gain012",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0871_11_00-000001.png",
+        "GOPR0871_11_00-000026.png",
+        "GOPR0871_11_00-000051.png",
+        "GOPR0871_11_00-000075.png",
+        "GOPR0871_11_00-000100.png"
+      ],
+      "expected_degradation": "low_light",
+      "expected_tool": "enhance_lowlight",
+      "is_ood": false,
+      "generation": {
+        "name": "lowlight_gain012",
+        "gain": 0.12
+      }
+    },
+    {
+      "case_id": "GOPR0871_11_00__jpeg_quality10",
+      "scene_id": "GOPR0871_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0871_11_00__jpeg_quality10",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.jpg",
+        "0002.jpg",
+        "0003.jpg",
+        "0004.jpg",
+        "0005.jpg"
+      ],
+      "source_frame_files": [
+        "GOPR0871_11_00-000001.png",
+        "GOPR0871_11_00-000026.png",
+        "GOPR0871_11_00-000051.png",
+        "GOPR0871_11_00-000075.png",
+        "GOPR0871_11_00-000100.png"
+      ],
+      "expected_degradation": "jpeg",
+      "expected_tool": "manual_review",
+      "is_ood": true,
+      "generation": {
+        "name": "jpeg_quality10",
+        "quality": 10
+      }
+    },
+    {
+      "case_id": "GOPR0871_11_00__mixed_blur_noise",
+      "scene_id": "GOPR0871_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0871_11_00__mixed_blur_noise",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0871_11_00-000001.png",
+        "GOPR0871_11_00-000026.png",
+        "GOPR0871_11_00-000051.png",
+        "GOPR0871_11_00-000075.png",
+        "GOPR0871_11_00-000100.png"
+      ],
+      "expected_degradation": "mixed",
+      "expected_tool": "manual_review",
+      "is_ood": true,
+      "generation": {
+        "name": "mixed_blur_noise",
+        "source": "GoPro input",
+        "sigma": 18.0
+      }
+    },
+    {
+      "case_id": "GOPR0871_11_00__unknown_color_cast",
+      "scene_id": "GOPR0871_11_00",
+      "split": "final_test",
+      "input_dir": "samples/heldout_v2/GOPR0871_11_00__unknown_color_cast",
+      "frame_count": 5,
+      "frame_files": [
+        "0001.png",
+        "0002.png",
+        "0003.png",
+        "0004.png",
+        "0005.png"
+      ],
+      "source_frame_files": [
+        "GOPR0871_11_00-000001.png",
+        "GOPR0871_11_00-000026.png",
+        "GOPR0871_11_00-000051.png",
+        "GOPR0871_11_00-000075.png",
+        "GOPR0871_11_00-000100.png"
+      ],
+      "expected_degradation": "unknown",
+      "expected_tool": "manual_review",
+      "is_ood": true,
+      "generation": {
+        "name": "unknown_color_cast",
+        "rgb_scale": [
+          0.45,
+          1.0,
+          0.45
+        ]
+      }
+    }
+  ]
+}

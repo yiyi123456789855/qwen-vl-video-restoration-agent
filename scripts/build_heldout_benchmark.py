@@ -12,6 +12,11 @@ DEFAULT_SCENES = [
     "GOPR0881_11_01",
 ]
 
+DEFAULT_EXCLUDED_SCENES = [
+    "GOPR0384_11_00",
+    "GOPR0384_11_05",
+]
+
 
 CASE_SPECS = [
     {
@@ -221,6 +226,14 @@ def main():
         default="benchmarks/heldout_v1.json",
     )
     parser.add_argument(
+        "--benchmark_id",
+        default="gopro_heldout_v1",
+    )
+    parser.add_argument(
+        "--split",
+        default="heldout",
+    )
+    parser.add_argument(
         "--scenes",
         nargs="+",
         default=DEFAULT_SCENES,
@@ -234,6 +247,15 @@ def main():
         "--seed",
         type=int,
         default=4090,
+    )
+    parser.add_argument(
+        "--exclude_scene",
+        action="append",
+        default=list(DEFAULT_EXCLUDED_SCENES),
+        help=(
+            "禁止用于当前benchmark的场景；可重复传入。"
+            "默认排除GOPR0384开发场景"
+        ),
     )
     args = parser.parse_args()
 
@@ -267,6 +289,14 @@ def main():
         )
 
     cases = []
+
+    excluded_scenes = set(args.exclude_scene)
+    selected_exclusions = set(args.scenes) & excluded_scenes
+    if selected_exclusions:
+        raise RuntimeError(
+            "benchmark场景与排除列表冲突："
+            + ", ".join(sorted(selected_exclusions))
+        )
 
     for scene_index, scene_id in enumerate(args.scenes):
         if scene_id.startswith("GOPR0384"):
@@ -333,7 +363,7 @@ def main():
                 {
                     "case_id": case_id,
                     "scene_id": scene_id,
-                    "split": "heldout",
+                    "split": args.split,
                     "input_dir": str(relative_input_dir),
                     "frame_count": len(output_names),
                     "frame_files": output_names,
@@ -353,14 +383,13 @@ def main():
             )
 
     manifest = {
-        "benchmark_id": "gopro_heldout_v1",
-        "split": "heldout",
+        "benchmark_id": args.benchmark_id,
+        "split": args.split,
         "seed": args.seed,
         "frame_count_per_case": args.frame_count,
-        "development_scene_exclusions": [
-            "GOPR0384_11_00",
-            "GOPR0384_11_05",
-        ],
+        "development_scene_exclusions": sorted(
+            excluded_scenes
+        ),
         "scenes": args.scenes,
         "case_count": len(cases),
         "cases": cases,
