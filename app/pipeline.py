@@ -19,6 +19,7 @@ from tools.restormer_deblur import RestormerDeblurrer
 from tools.retinexformer_lowlight import (
     RetinexformerLowLightEnhancer,
 )
+from tools.quality_evaluator import evaluate_quality
 
 IMAGE_SUFFIXES = {
     ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"
@@ -198,6 +199,124 @@ def copy_sequence(frame_paths, target_dir: Path):
         shutil.copy2(frame_path, target_dir / frame_path.name)
 
 
+def scaled_overlap(base_overlap, tile, attempt):
+    """Increase overlap on retries without reaching the tile size."""
+    value = base_overlap * (2 ** (attempt - 1))
+    return min(value, max(tile - 1, 0))
+
+
+def execute_restoration(
+    args,
+    tool,
+    input_dir: Path,
+    target_dir: Path,
+    attempt,
+):
+    """Execute one restoration attempt and record its parameters."""
+    if tool == "denoise":
+        overlap = scaled_overlap(
+            args.overlap,
+            args.tile,
+            attempt,
+        )
+        parameters = {
+            "tile": args.tile,
+            "overlap": overlap,
+        }
+        print(
+            "[Restore] "
+            f"attempt={attempt}; tool=denoise; "
+            f"tile={args.tile}; overlap={overlap}"
+        )
+        runner = VideoDenoiser(
+            test_script=args.denoise_test_script,
+            weights=args.denoise_weights,
+            device=args.device,
+            tile=args.tile,
+            overlap=overlap,
+        )
+        tool_report = runner.run_sequence(
+            str(input_dir),
+            str(target_dir),
+        )
+    elif tool == "deblur":
+        if not args.restormer_repo:
+            raise RuntimeError(
+                "模型选择了deblur，"
+                "但没有提供--restormer_repo"
+            )
+        overlap = scaled_overlap(
+            args.restormer_overlap,
+            args.restormer_tile,
+            attempt,
+        )
+        parameters = {
+            "tile": args.restormer_tile,
+            "tile_overlap": overlap,
+        }
+        print(
+            "[Restore] "
+            f"attempt={attempt}; tool=deblur; "
+            f"tile={args.restormer_tile}; "
+            f"tile_overlap={overlap}"
+        )
+        runner = RestormerDeblurrer(
+            repo_dir=args.restormer_repo,
+            python_executable=args.restormer_python,
+            tile=args.restormer_tile,
+            tile_overlap=overlap,
+        )
+        tool_report = runner.run_sequence(
+            str(input_dir),
+            str(target_dir),
+        )
+    elif tool == "enhance_lowlight":
+        if not args.retinexformer_repo:
+            raise RuntimeError(
+                "模型选择了enhance_lowlight，"
+                "但没有提供--retinexformer_repo"
+            )
+        parameters = {
+            "weights": args.retinexformer_weights,
+            "config": args.retinexformer_config,
+            "device": args.device,
+        }
+        print(
+            "[Restore] "
+            f"attempt={attempt}; "
+            "tool=enhance_lowlight"
+        )
+        runner = RetinexformerLowLightEnhancer(
+            repo_dir=args.retinexformer_repo,
+            weights=args.retinexformer_weights,
+            config=args.retinexformer_config,
+            device=args.device,
+        )
+        tool_report = runner.run_sequence(
+            str(input_dir),
+            str(target_dir),
+        )
+    else:
+        raise ValueError(f"工具不支持复原执行：{tool}")
+
+    return {
+        "attempt": attempt,
+        "output_dir": str(target_dir),
+        "parameters": parameters,
+        "tool_report": tool_report,
+    }
+
+
+def publish_attempt(attempt_dir: Path, restored_dir: Path):
+    """Copy the selected attempt to the stable restored/ directory."""
+    selected_frames = list_images(attempt_dir)
+    if not selected_frames:
+        raise RuntimeError(
+            f"选中的复原尝试没有输出图像：{attempt_dir}"
+        )
+    copy_sequence(selected_frames, restored_dir)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_dir", required=True)
@@ -290,7 +409,40 @@ def main():
         default="agreement_only",
         help="路由融合策略；默认使用安全优先的一致性策略",
     )
+    parser.add_argument(
+        "--disable_quality_gate",
+        action="store_true",
+        help="关闭工具执行后的客观质量门控",
+    )
+    parser.add_argument(
+        "--quality_attempt",
+        type=int,
+        default=1,
+        help="质量门控的起始尝试编号；通常保持为1",
+    )
+    parser.add_argument(
+        "--quality_max_attempts",
+        type=int,
+        default=2,
+        help="包含首次执行在内的最大复原次数",
+    )
+    parser.add_argument(
+        "--quality_deblur_min_sharpness_gain",
+        type=float,
+        default=1.10,
+        help=(
+            "去模糊清晰度提升门槛；默认1.10。"
+            "调高可用于门控压力测试"
+        ),
+    )
     args = parser.parse_args()
+
+    if args.quality_attempt < 1:
+        raise ValueError("quality_attempt必须大于等于1")
+    if args.quality_max_attempts < args.quality_attempt:
+        raise ValueError(
+            "quality_max_attempts不能小于quality_attempt"
+        )
 
     input_dir = Path(args.input_dir).expanduser().resolve()
     output_dir = Path(args.output_dir).expanduser().resolve()
@@ -366,77 +518,204 @@ def main():
     denoise_report = None
     deblur_report = None
     lowlight_report = None
+    quality_report = None
+    quality_report_path = None
+    restoration_attempts = []
+    selected_attempt = None
+    published_attempt = None
+    published_result = None
+
     if args.diagnosis_only:
         print(
             "[2/3] Diagnosis-only mode: "
             f"predicted tool={tool}; restoration skipped"
         )
         action = "diagnosis_only"
-    elif tool == "denoise":
-        print("[2/3] Tool selected: denoise")
-        denoiser = VideoDenoiser(
-            test_script=args.denoise_test_script,
-            weights=args.denoise_weights,
-            device=args.device,
-            tile=args.tile,
-            overlap=args.overlap,
+        closed_loop_status = "diagnosis_only"
+    elif tool in {
+        "denoise",
+        "deblur",
+        "enhance_lowlight",
+    }:
+        print(f"[2/3] Tool selected: {tool}")
+        action = tool
+
+        quality_gate_enabled = not args.disable_quality_gate
+        retry_supported = tool in {"denoise", "deblur"}
+        last_attempt = (
+            args.quality_max_attempts
+            if quality_gate_enabled and retry_supported
+            else args.quality_attempt
         )
-        denoise_report = denoiser.run_sequence(
-            str(input_dir),
-            str(restored_dir),
-        )
-        action = "denoise"
-    elif tool == "deblur":
-        if not args.restormer_repo:
-            raise RuntimeError(
-                "模型选择了deblur，"
-                "但没有提供--restormer_repo"
+
+        for attempt in range(
+            args.quality_attempt,
+            last_attempt + 1,
+        ):
+            attempt_dir = (
+                output_dir
+                / f"restored_attempt_{attempt}"
+            )
+            attempt_record = execute_restoration(
+                args=args,
+                tool=tool,
+                input_dir=input_dir,
+                target_dir=attempt_dir,
+                attempt=attempt,
             )
 
-        print("[2/3] Tool selected: deblur")
+            current_tool_report = attempt_record[
+                "tool_report"
+            ]
+            if tool == "denoise":
+                denoise_report = current_tool_report
+            elif tool == "deblur":
+                deblur_report = current_tool_report
+            else:
+                lowlight_report = current_tool_report
 
-        deblurrer = RestormerDeblurrer(
-            repo_dir=args.restormer_repo,
-            python_executable=args.restormer_python,
-            tile=args.restormer_tile,
-            tile_overlap=args.restormer_overlap,
-        )
+            if not quality_gate_enabled:
+                selected_attempt = attempt
+                closed_loop_status = "not_evaluated"
+                attempt_record["quality"] = None
+                restoration_attempts.append(attempt_record)
+                break
 
-        deblur_report = deblurrer.run_sequence(
-            str(input_dir),
-            str(restored_dir),
-        )
+            print(
+                "[Quality] Evaluating restored sequence: "
+                f"tool={tool}; attempt={attempt}"
+            )
+            quality_report = evaluate_quality(
+                input_dir=input_dir,
+                output_dir=attempt_dir,
+                tool=tool,
+                attempt=attempt,
+                max_attempts=(
+                    args.quality_max_attempts
+                    if retry_supported
+                    else attempt
+                ),
+                threshold_overrides={
+                    "deblur_min_sharpness_gain": (
+                        args.quality_deblur_min_sharpness_gain
+                    ),
+                },
+            )
+            attempt_quality_path = (
+                output_dir
+                / f"quality_attempt_{attempt}.json"
+            )
+            attempt_quality_path.write_text(
+                json.dumps(
+                    quality_report,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            attempt_record["quality_report_path"] = str(
+                attempt_quality_path
+            )
+            attempt_record["quality"] = quality_report
+            restoration_attempts.append(attempt_record)
 
-        action = "deblur"
-    elif tool == "enhance_lowlight":
-        if not args.retinexformer_repo:
-            raise RuntimeError(
-                "模型选择了enhance_lowlight，"
-                "但没有提供--retinexformer_repo"
+            current_status = quality_report["status"]
+            print(
+                "[Quality] "
+                f"attempt={attempt}; "
+                f"status={current_status}; "
+                f"score={quality_report['quality_score']}"
             )
 
-        print(
-            "[2/3] Tool selected: "
-            "enhance_lowlight"
-        )
+            if current_status in {"accept", "stop"}:
+                selected_attempt = attempt
+                closed_loop_status = current_status
+                break
 
-        enhancer = RetinexformerLowLightEnhancer(
-            repo_dir=args.retinexformer_repo,
-            weights=args.retinexformer_weights,
-            config=args.retinexformer_config,
-            device=args.device,
-        )
+            if current_status == "retry" and retry_supported:
+                print(
+                    "[Closed loop] Quality gate requested retry; "
+                    "increasing tile overlap"
+                )
+                continue
 
-        lowlight_report = enhancer.run_sequence(
-            str(input_dir),
-            str(restored_dir),
-        )
+            selected_attempt = attempt
+            closed_loop_status = "manual_review"
+            if current_status == "retry":
+                quality_report = dict(quality_report)
+                quality_report["status"] = "manual_review"
+                quality_report["reason"] = (
+                    "质量门控建议重试，但该工具没有安全且不同的"
+                    "自动重试参数，转人工复核"
+                )
+                restoration_attempts[-1][
+                    "quality"
+                ] = quality_report
+            break
 
-        action = "enhance_lowlight"
+        if selected_attempt is None:
+            selected_attempt = restoration_attempts[-1][
+                "attempt"
+            ]
+
+        if closed_loop_status == "manual_review":
+            selected_attempt = max(
+                restoration_attempts,
+                key=lambda record: (
+                    -1.0
+                    if record.get("quality") is None
+                    or record["quality"].get(
+                        "quality_score"
+                    ) is None
+                    else record["quality"][
+                        "quality_score"
+                    ],
+                    record["attempt"],
+                ),
+            )["attempt"]
+
+        selected_record = next(
+            record
+            for record in restoration_attempts
+            if record["attempt"] == selected_attempt
+        )
+        if closed_loop_status == "stop":
+            copy_sequence(frame_paths, restored_dir)
+            published_result = "original_input_safety_fallback"
+        else:
+            publish_attempt(
+                Path(selected_record["output_dir"]),
+                restored_dir,
+            )
+            published_attempt = selected_attempt
+            published_result = "restoration_attempt"
+
+        quality_report_path = (
+            None
+            if quality_report is None
+            else output_dir / "quality_report.json"
+        )
+        if quality_report_path is not None:
+            quality_report_path.write_text(
+                json.dumps(
+                    quality_report,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
     else:
         print(f"[2/3] Tool selected: {tool}; copying original frames")
         copy_sequence(frame_paths, restored_dir)
         action = "passthrough" if tool == "none" else "unsupported_passthrough"
+        if tool == "none":
+            closed_loop_status = "accept"
+        elif tool == "manual_review":
+            closed_loop_status = "manual_review"
+        else:
+            closed_loop_status = "not_evaluated"
 
     report = {
         "input_dir": str(input_dir),
@@ -491,6 +770,20 @@ def main():
         "selected_tool": tool,
         "force_tool": args.force_tool,
         "diagnosis_only": args.diagnosis_only,
+        "quality_gate_enabled": (
+            not args.disable_quality_gate
+        ),
+        "closed_loop_status": closed_loop_status,
+        "quality_report_path": (
+            None
+            if quality_report_path is None
+            else str(quality_report_path)
+        ),
+        "quality": quality_report,
+        "selected_attempt": selected_attempt,
+        "published_attempt": published_attempt,
+        "published_result": published_result,
+        "restoration_attempts": restoration_attempts,
         "denoise": denoise_report,
         "deblur": deblur_report,
         "lowlight": lowlight_report,
