@@ -1,0 +1,23 @@
+{
+  "benchmark_id": "gopro_heldout_v2",
+  "mode": "single",
+  "fusion_policy": "agreement_only",
+  "quality_max_attempts": 2,
+  "requested_cases": 27,
+  "completed": 27,
+  "skipped": 0,
+  "failed": 0,
+  "failures": [],
+  "final_statuses": {
+    "accept": 11,
+    "manual_review": 16
+  },
+  "selected_tools": {
+    "deblur": 2,
+    "denoise": 3,
+    "enhance_lowlight": 3,
+    "manual_review": 14,
+    "none": 5
+  },
+  "elapsed_seconds": 222.96
+}
