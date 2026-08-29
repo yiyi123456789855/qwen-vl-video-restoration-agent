@@ -205,6 +205,25 @@ def scaled_overlap(base_overlap, tile, attempt):
     return min(value, max(tile - 1, 0))
 
 
+def select_retry_strategy(tool, quality_report):
+    """Return a retry strategy only when it can address the failure."""
+    failed_checks = {
+        check["name"]
+        for check in quality_report.get("checks", [])
+        if not check.get("passed", False)
+    }
+    if not failed_checks:
+        return None
+
+    if (
+        tool in {"denoise", "deblur"}
+        and failed_checks <= {"temporal_consistency"}
+    ):
+        return "increase_tile_overlap"
+
+    return None
+
+
 def execute_restoration(
     args,
     tool,
@@ -435,6 +454,15 @@ def main():
             "调高可用于门控压力测试"
         ),
     )
+    parser.add_argument(
+        "--quality_max_temporal_residual_ratio",
+        type=float,
+        default=1.35,
+        help=(
+            "时序残差相对输入的最大比例；默认1.35。"
+            "调低可用于重试策略压力测试"
+        ),
+    )
     args = parser.parse_args()
 
     if args.quality_attempt < 1:
@@ -599,6 +627,9 @@ def main():
                     "deblur_min_sharpness_gain": (
                         args.quality_deblur_min_sharpness_gain
                     ),
+                    "max_temporal_residual_ratio": (
+                        args.quality_max_temporal_residual_ratio
+                    ),
                 },
             )
             attempt_quality_path = (
@@ -633,10 +664,18 @@ def main():
                 closed_loop_status = current_status
                 break
 
-            if current_status == "retry" and retry_supported:
+            retry_strategy = None
+            if current_status == "retry":
+                retry_strategy = select_retry_strategy(
+                    tool,
+                    quality_report,
+                )
+            attempt_record["retry_strategy"] = retry_strategy
+
+            if retry_strategy == "increase_tile_overlap":
                 print(
                     "[Closed loop] Quality gate requested retry; "
-                    "increasing tile overlap"
+                    "strategy=increase_tile_overlap"
                 )
                 continue
 
@@ -644,14 +683,22 @@ def main():
             closed_loop_status = "manual_review"
             if current_status == "retry":
                 quality_report = dict(quality_report)
+                quality_report["evaluator_status"] = "retry"
                 quality_report["status"] = "manual_review"
                 quality_report["reason"] = (
-                    "质量门控建议重试，但该工具没有安全且不同的"
-                    "自动重试参数，转人工复核"
+                    "质量检查未通过，且现有自动参数无法针对该"
+                    "失败原因进行有效修复，转人工复核"
                 )
-                restoration_attempts[-1][
-                    "quality"
-                ] = quality_report
+                attempt_record["quality"] = quality_report
+                attempt_quality_path.write_text(
+                    json.dumps(
+                        quality_report,
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
             break
 
         if selected_attempt is None:
@@ -772,6 +819,9 @@ def main():
         "diagnosis_only": args.diagnosis_only,
         "quality_gate_enabled": (
             not args.disable_quality_gate
+        ),
+        "closed_loop_policy_version": (
+            "failure_aware_retry_v2"
         ),
         "closed_loop_status": closed_loop_status,
         "quality_report_path": (

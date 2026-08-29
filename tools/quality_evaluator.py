@@ -564,6 +564,13 @@ def main():
         ],
     )
     parser.add_argument(
+        "--max_temporal_residual_ratio",
+        type=float,
+        default=DEFAULT_THRESHOLDS[
+            "max_temporal_residual_ratio"
+        ],
+    )
+    parser.add_argument(
         "--report",
         default=None,
     )
@@ -578,6 +585,9 @@ def main():
         threshold_overrides={
             "deblur_min_sharpness_gain": (
                 args.deblur_min_sharpness_gain
+            ),
+            "max_temporal_residual_ratio": (
+                args.max_temporal_residual_ratio
             ),
         },
     )
