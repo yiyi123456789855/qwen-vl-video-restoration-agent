@@ -166,6 +166,8 @@ def run_qwen_diagnosis(
         [
             "--output",
             str(output_path),
+            "--fusion_policy",
+            args.fusion_policy,
         ]
     )
 
@@ -278,6 +280,15 @@ def main():
             "只运行退化诊断并保存报告，"
             "不执行任何复原工具"
         ),
+    )
+    parser.add_argument(
+        "--fusion_policy",
+        choices=[
+            "agreement_only",
+            "objective_override",
+        ],
+        default="agreement_only",
+        help="路由融合策略；默认使用安全优先的一致性策略",
     )
     args = parser.parse_args()
 
@@ -459,6 +470,10 @@ def main():
         ),
         "decision_source": diagnosis_report.get(
             "decision_source"
+        ),
+        "fusion_policy": diagnosis_report.get(
+            "fusion_policy",
+            args.fusion_policy,
         ),
         "routing_confidence": diagnosis.get(
             "confidence"

@@ -144,7 +144,11 @@ def compute_luminance_stats(image_path):
     }
 
 
-def fuse_diagnoses(raw_diagnosis, objective_prior):
+def fuse_diagnoses(
+    raw_diagnosis,
+    objective_prior,
+    fusion_policy,
+):
     prior_confidence = float(
         objective_prior.get("confidence", 0.0)
     )
@@ -181,6 +185,21 @@ def fuse_diagnoses(raw_diagnosis, objective_prior):
         and raw_diagnosis.get("recommended_tool")
         == prior_tool
     )
+
+    if (
+        fusion_policy == "agreement_only"
+        and not agrees
+    ):
+        return (
+            {
+                "degradation": "unknown",
+                "severity": "none",
+                "recommended_tool": "manual_review",
+                "confidence": 0.0,
+                "reason": "VLM与客观先验不一致，转人工复核",
+            },
+            "abstain_vlm_objective_disagreement",
+        )
 
     diagnosis = {
         "degradation": prior_degradation,
@@ -232,6 +251,18 @@ def main():
         "--adapter",
         default=None,
         help="可选的LoRA Adapter目录",
+    )
+    parser.add_argument(
+        "--fusion_policy",
+        choices=[
+            "agreement_only",
+            "objective_override",
+        ],
+        default="agreement_only",
+        help=(
+            "agreement_only仅在VLM与客观先验一致时自动路由；"
+            "objective_override保留v1消融策略"
+        ),
     )
     args = parser.parse_args()
 
@@ -513,6 +544,7 @@ enhance_lowlight。若图像是有意使用黑色背景的辐射、
     diagnosis, decision_source = fuse_diagnoses(
         raw_diagnosis,
         objective_prior,
+        args.fusion_policy,
     )
     report = {
         "image": str(image_path),
@@ -542,6 +574,7 @@ enhance_lowlight。若图像是有意使用黑色背景的辐射、
         "raw_diagnosis": raw_diagnosis,
         "diagnosis": diagnosis,
         "decision_source": decision_source,
+        "fusion_policy": args.fusion_policy,
         "raw_output": raw_text,
         "inference_seconds": round(elapsed, 3),
         "peak_gpu_memory_gb": round(
