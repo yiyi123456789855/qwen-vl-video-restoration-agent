@@ -4,6 +4,12 @@
 
 > 当前 V2 重点不是追求封闭测试集上的最高分类准确率，而是实现一个可复现、可拒答、可审计、能真实执行复原工具的多模态 Agent。
 
+## 演示总览
+
+![去模糊、彩色去噪、低照度增强与 OOD 拒答演示](assets/demo_overview_v2.png)
+
+同一套 Agent 根据多模态诊断与客观先验选择 Restormer、五帧视频去噪或 Retinexformer；当 VLM 与客观证据冲突时，系统拒绝自动处理并发布原始帧供人工复核。
+
 ## 核心能力
 
 - 多退化诊断：支持 `clean / noise / blur / jpeg / low_light / mixed / unknown`。
