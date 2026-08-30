@@ -11,6 +11,7 @@
 - 多帧输入：支持 `single / contact_sheet / native_video` 三种诊断模式。
 - 安全路由：Qwen2.5-VL 与客观图像先验一致时自动执行；不一致或证据不足时输出 `manual_review`。
 - 闭环质量控制：`诊断 → 路由 → 执行 → 质量评价 → 接受 / 重试 / 人工复核 / 停止`。
+- 颜色安全去噪：灰度权重处理亮度通道时保留输入色度，避免彩色视频被错误输出为灰度。
 - 单卡部署：大模型与复原工具分阶段加载，避免同时占用显存，已在 RTX 4090 24 GB 上完成完整实验。
 - 可审计输出：保留原始 VLM 判断、客观先验、融合来源、路由置信度、工具参数、每次尝试和质量门控结果。
 
@@ -38,7 +39,7 @@ flowchart TD
     K -->|严重质量伤害| N[Stop / 回退原图]
 ```
 
-质量评价不会完全相信大模型的文字判断，而是根据不同工具检查噪声下降、梯度保留、清晰度提升、亮度增益、高光裁剪和归一化帧间残差。
+质量评价不会完全相信大模型的文字判断，而是根据不同工具检查噪声下降、梯度保留、色彩保留、清晰度提升、亮度增益、高光裁剪和归一化帧间残差。彩色输入若在复原后接近灰度，会触发安全停止并回退原始帧。
 
 ## V2 冻结测试
 
@@ -122,7 +123,7 @@ git checkout v1.0.0
 | 视频去噪 | 五帧 VideoStackUNet | 处理随机噪声 |
 | 视频去模糊 | Restormer | 逐帧运动去模糊 |
 | 低照增强 | Retinexformer | 逐帧低照度增强 |
-| 质量门控 | 无参考指标 + 时序残差 | 接受、失败感知重试、复核或停止 |
+| 质量门控 | 无参考指标 + 色彩保留 + 时序残差 | 接受、失败感知重试、复核或停止 |
 
 第三方网络和预训练权重不会提交到本仓库，使用时请遵循各项目的许可证。
 
@@ -187,7 +188,33 @@ git clone https://github.com/caiyuanhao1998/Retinexformer.git \
 
 根据两个官方仓库的说明安装依赖并下载预训练权重。去噪网络的测试脚本和权重通过命令行参数传入。
 
-### 2. 单个视频帧序列
+### 2. 启动 Gradio 演示
+
+```bash
+python -u app/gradio_app.py \
+  --qwen_script models/qwen_diagnoser.py \
+  --denoise_test_script /path/to/video_test1210new.py \
+  --denoise_weights /path/to/video_denoiser.pth \
+  --restormer_repo third_party/Restormer \
+  --retinexformer_repo third_party/Retinexformer \
+  --allowed_input_root /path/to/allowed/input/root \
+  --server_name 127.0.0.1 \
+  --server_port 7860
+```
+
+界面支持上传连续帧或填写白名单内的服务器序列目录，并展示：
+
+- 代表输入帧与最终发布帧；
+- VLM 原始判断、客观先验和融合路由；
+- 路由置信度、工具选择及每次执行参数；
+- 质量门控检查、接受/重试/复核/停止状态；
+- 完整 JSON 报告、输出帧画廊与 ZIP 下载。
+
+默认使用 `single` 诊断模式，这是 V2 冻结评测配置。`contact_sheet` 和 `native_video` 用于对比实验。服务端目录输入受 `--allowed_input_root` 限制，队列并发数固定为 1，以适配单张 GPU。
+
+如确需临时公网分享，可附加 `--share`。公开前请确认输入不包含敏感数据，并限制服务开放时间。
+
+### 3. 单个视频帧序列
 
 输入目录应包含按文件名排序的连续图像帧。
 
@@ -219,7 +246,7 @@ outputs/demo_blur/
 
 `run_report.json` 包含原始诊断、客观先验、融合策略、决策来源、工具参数、复原尝试、质量检查和最终发布结果。
 
-### 3. 比较多帧诊断模式
+### 4. 比较多帧诊断模式
 
 ```bash
 python -u app/pipeline.py \
@@ -238,7 +265,7 @@ python -u app/pipeline.py \
 
 可将 `native_video` 替换为 `single` 或 `contact_sheet`。
 
-### 4. 复现冻结测试
+### 5. 复现冻结测试
 
 ```bash
 python -u scripts/run_closed_loop_benchmark.py \
@@ -295,13 +322,15 @@ python scripts/summarize_closed_loop_quality.py \
 - VLM 和客观先验可能产生共同错误，尤其是模糊漏检和 JPEG 直通。
 - 当前工具按帧或固定五帧执行，仍缺少更强的长时序建模。
 - 无参考质量指标只能检测部分输出伤害，不能证明语义路由正确。
+- 灰度去噪权重当前采用“亮度去噪 + 输入色度重组”，能够避免颜色完全丢失，但不等同于联合学习 RGB 噪声分布。
 - 下一阶段应在新的开发集上校准轻度退化阈值，并使用完全独立的真实视频数据进行外部测试；不得继续使用 `heldout_v2` 调参。
 
 ## 版本
 
 - `v1.0.0`：Qwen2.5-VL 二分类诊断与去噪基线。
 - `v2.0.0-rc1`：冻结的多工具、拒答和闭环质量控制候选版本。
-- `feature/v2-multitool-agent`：包含冻结测试报告与最终文档。
+- `v2.0.0`：多工具、安全拒答、闭环质量控制与冻结测试报告。
+- `feature/v2-gradio-demo`：V2 可审计 Gradio 界面、颜色安全去噪与色彩保留质量门控。
 
 ## License
 

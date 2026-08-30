@@ -38,6 +38,10 @@ DEFAULT_THRESHOLDS = {
     "lowlight_min_dark_area_reduction": 0.10,
     "lowlight_max_highlight_clip_increase": 0.08,
     "max_temporal_residual_ratio": 1.35,
+    # Colour checks are applied only if the input contains meaningful colour.
+    "min_input_colorfulness_for_check": 0.02,
+    "min_colorfulness_retention_ratio": 0.50,
+    "severe_colorfulness_retention_ratio": 0.10,
 }
 
 
@@ -57,8 +61,7 @@ def list_images(folder):
         [
             path
             for path in folder.iterdir()
-            if path.is_file()
-            and path.suffix.lower() in IMAGE_SUFFIXES
+            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
         ],
         key=natural_key,
     )
@@ -88,20 +91,20 @@ def pair_images(input_paths, output_paths):
         (input_by_stem[stem], output_by_stem[stem])
         for stem in sorted(
             input_by_stem,
-            key=lambda value: natural_key(
-                input_by_stem[value]
-            ),
+            key=lambda value: natural_key(input_by_stem[value]),
         )
     ]
 
 
-def load_luminance(path):
+def load_rgb(path):
     with Image.open(path) as image:
-        rgb = np.asarray(
+        return np.asarray(
             image.convert("RGB"),
             dtype=np.float32,
         ) / 255.0
 
+
+def rgb_to_luminance(rgb):
     return (
         0.2126 * rgb[..., 0]
         + 0.7152 * rgb[..., 1]
@@ -109,18 +112,39 @@ def load_luminance(path):
     )
 
 
+def load_luminance(path):
+    return rgb_to_luminance(load_rgb(path))
+
+
+def colorfulness_metric(rgb):
+    """Hasler-Suesstrunk style colourfulness on RGB values in [0, 1]."""
+    red = rgb[..., 0]
+    green = rgb[..., 1]
+    blue = rgb[..., 2]
+    red_green = red - green
+    yellow_blue = 0.5 * (red + green) - blue
+
+    chroma_std = math.sqrt(
+        float(np.var(red_green))
+        + float(np.var(yellow_blue))
+    )
+    chroma_mean = math.sqrt(
+        float(np.mean(red_green)) ** 2
+        + float(np.mean(yellow_blue)) ** 2
+    )
+    return chroma_std + 0.3 * chroma_mean
+
+
 def measure_extra_frame(path):
-    luminance = load_luminance(path)
+    rgb = load_rgb(path)
+    luminance = rgb_to_luminance(rgb)
     gradient_x = np.diff(luminance, axis=1)
     gradient_y = np.diff(luminance, axis=0)
+    channel_range = rgb.max(axis=2) - rgb.min(axis=2)
 
     return {
-        "bright_clip_ratio": float(
-            np.mean(luminance >= 0.98)
-        ),
-        "black_clip_ratio": float(
-            np.mean(luminance <= 0.01)
-        ),
+        "bright_clip_ratio": float(np.mean(luminance >= 0.98)),
+        "black_clip_ratio": float(np.mean(luminance <= 0.01)),
         "gradient_energy": float(
             (
                 np.mean(np.abs(gradient_x))
@@ -128,14 +152,15 @@ def measure_extra_frame(path):
             )
             / 2.0
         ),
+        "colorfulness": float(colorfulness_metric(rgb)),
+        "near_gray_pixel_ratio": float(
+            np.mean(channel_range <= (2.0 / 255.0))
+        ),
     }
 
 
 def aggregate_extra(paths):
-    measurements = [
-        measure_extra_frame(path)
-        for path in paths
-    ]
+    measurements = [measure_extra_frame(path) for path in paths]
     summary = {}
 
     for key in measurements[0]:
@@ -168,15 +193,10 @@ def temporal_stats(paths):
     ]
     residuals = []
 
-    for previous, current in zip(
-        normalized[:-1],
-        normalized[1:],
-    ):
+    for previous, current in zip(normalized[:-1], normalized[1:]):
         difference = current - previous
         centered = difference - np.median(difference)
-        residuals.append(
-            float(np.median(np.abs(centered)))
-        )
+        residuals.append(float(np.median(np.abs(centered))))
 
     luminance_means = np.asarray(
         [float(frame.mean()) for frame in frames],
@@ -234,9 +254,7 @@ def add_check(
             "name": name,
             "passed": passed,
             "actual": (
-                None
-                if actual is None
-                else round(float(actual), 6)
+                None if actual is None else round(float(actual), 6)
             ),
             "operator": operator,
             "threshold": threshold,
@@ -260,14 +278,12 @@ def evaluate_quality(
 
     thresholds = dict(DEFAULT_THRESHOLDS)
     if threshold_overrides:
-        unknown_thresholds = (
-            set(threshold_overrides)
-            - set(DEFAULT_THRESHOLDS)
+        unknown_thresholds = set(threshold_overrides) - set(
+            DEFAULT_THRESHOLDS
         )
         if unknown_thresholds:
             raise ValueError(
-                "未知质量阈值："
-                + ", ".join(sorted(unknown_thresholds))
+                "未知质量阈值：" + ", ".join(sorted(unknown_thresholds))
             )
         thresholds.update(threshold_overrides)
 
@@ -277,12 +293,8 @@ def evaluate_quality(
     paired_input_paths = [pair[0] for pair in pairs]
     paired_output_paths = [pair[1] for pair in pairs]
 
-    before_objective = analyze_sequence(
-        paired_input_paths
-    )
-    after_objective = analyze_sequence(
-        paired_output_paths
-    )
+    before_objective = analyze_sequence(paired_input_paths)
+    after_objective = analyze_sequence(paired_output_paths)
     before_features = before_objective["features"]
     after_features = after_objective["features"]
     before_extra = aggregate_extra(paired_input_paths)
@@ -290,14 +302,8 @@ def evaluate_quality(
     before_temporal = temporal_stats(paired_input_paths)
     after_temporal = temporal_stats(paired_output_paths)
 
-    before_noise = median_feature(
-        before_features,
-        "noise_sigma",
-    )
-    after_noise = median_feature(
-        after_features,
-        "noise_sigma",
-    )
+    before_noise = median_feature(before_features, "noise_sigma")
+    after_noise = median_feature(after_features, "noise_sigma")
     before_sharpness = median_feature(
         before_features,
         "laplacian_variance",
@@ -322,14 +328,8 @@ def evaluate_quality(
         after_features,
         "dark_pixel_ratio",
     )
-    before_gradient = median_feature(
-        before_extra,
-        "gradient_energy",
-    )
-    after_gradient = median_feature(
-        after_extra,
-        "gradient_energy",
-    )
+    before_gradient = median_feature(before_extra, "gradient_energy")
+    after_gradient = median_feature(after_extra, "gradient_energy")
     before_bright_clip = median_feature(
         before_extra,
         "bright_clip_ratio",
@@ -338,18 +338,23 @@ def evaluate_quality(
         after_extra,
         "bright_clip_ratio",
     )
+    before_colorfulness = median_feature(before_extra, "colorfulness")
+    after_colorfulness = median_feature(after_extra, "colorfulness")
+    before_near_gray = median_feature(
+        before_extra,
+        "near_gray_pixel_ratio",
+    )
+    after_near_gray = median_feature(
+        after_extra,
+        "near_gray_pixel_ratio",
+    )
 
     comparisons = {
-        "noise_reduction_fraction": (
-            safe_ratio(
-                before_noise - after_noise,
-                before_noise,
-            )
-        ),
-        "noise_growth_ratio": safe_ratio(
-            after_noise,
+        "noise_reduction_fraction": safe_ratio(
+            before_noise - after_noise,
             before_noise,
         ),
+        "noise_growth_ratio": safe_ratio(after_noise, before_noise),
         "sharpness_gain_ratio": safe_ratio(
             after_sharpness,
             before_sharpness,
@@ -365,16 +370,17 @@ def evaluate_quality(
         "dark_pixel_ratio_reduction": (
             before_dark_ratio - after_dark_ratio
         ),
-        "bright_clip_increase": (
-            after_bright_clip - before_bright_clip
-        ),
+        "bright_clip_increase": after_bright_clip - before_bright_clip,
         "temporal_residual_ratio": safe_ratio(
-            after_temporal[
-                "normalized_residual_median"
-            ],
-            before_temporal[
-                "normalized_residual_median"
-            ],
+            after_temporal["normalized_residual_median"],
+            before_temporal["normalized_residual_median"],
+        ),
+        "colorfulness_retention_ratio": safe_ratio(
+            after_colorfulness,
+            before_colorfulness,
+        ),
+        "near_gray_pixel_ratio_increase": (
+            after_near_gray - before_near_gray
         ),
     }
 
@@ -436,14 +442,26 @@ def evaluate_quality(
             "highlight_clipping",
             comparisons["bright_clip_increase"],
             "<=",
-            thresholds[
-                "lowlight_max_highlight_clip_increase"
-            ],
+            thresholds["lowlight_max_highlight_clip_increase"],
             "新增高光裁剪比例不超过8个百分点",
         )
     else:
         raise ValueError(
             "tool只能是denoise、deblur或enhance_lowlight"
+        )
+
+    color_check_applied = (
+        before_colorfulness
+        >= thresholds["min_input_colorfulness_for_check"]
+    )
+    if color_check_applied:
+        add_check(
+            checks,
+            "color_retention",
+            comparisons["colorfulness_retention_ratio"],
+            ">=",
+            thresholds["min_colorfulness_retention_ratio"],
+            "彩色输入至少保留50%的色彩度，避免输出灰度化",
         )
 
     if before_temporal["frame_pairs"] > 0:
@@ -458,17 +476,23 @@ def evaluate_quality(
 
     severe_harm_reasons = []
     if after_bright_clip >= 0.30:
-        severe_harm_reasons.append(
-            "输出高光裁剪比例达到30%"
-        )
+        severe_harm_reasons.append("输出高光裁剪比例达到30%")
     if after_luminance <= 0.01:
         severe_harm_reasons.append("输出几乎全黑")
-    temporal_ratio = comparisons[
-        "temporal_residual_ratio"
-    ]
+
+    temporal_ratio = comparisons["temporal_residual_ratio"]
     if temporal_ratio is not None and temporal_ratio > 2.5:
+        severe_harm_reasons.append("时序残差超过输入的2.5倍")
+
+    color_ratio = comparisons["colorfulness_retention_ratio"]
+    if (
+        color_check_applied
+        and color_ratio is not None
+        and color_ratio
+        < thresholds["severe_colorfulness_retention_ratio"]
+    ):
         severe_harm_reasons.append(
-            "时序残差超过输入的2.5倍"
+            "彩色输入在复原后接近灰度，发生严重颜色丢失"
         )
 
     passed_count = sum(check["passed"] for check in checks)
@@ -483,19 +507,15 @@ def evaluate_quality(
     elif attempt < max_attempts:
         status = "retry"
         failed_names = [
-            check["name"]
-            for check in checks
-            if not check["passed"]
+            check["name"] for check in checks if not check["passed"]
         ]
-        reason = "以下检查未通过：" + ", ".join(
-            failed_names
-        )
+        reason = "以下检查未通过：" + ", ".join(failed_names)
     else:
         status = "manual_review"
         reason = "达到最大尝试次数且质量门控仍未全部通过"
 
     return {
-        "quality_gate_version": "quality_gate_v1_development",
+        "quality_gate_version": "quality_gate_v2_color_safe",
         "tool": tool,
         "attempt": attempt,
         "max_attempts": max_attempts,
@@ -503,6 +523,7 @@ def evaluate_quality(
         "input_dir": str(Path(input_dir).expanduser().resolve()),
         "output_dir": str(Path(output_dir).expanduser().resolve()),
         "paired_frames": len(pairs),
+        "color_check_applied": color_check_applied,
         "status": status,
         "quality_score": (
             None
@@ -514,9 +535,7 @@ def evaluate_quality(
         "severe_harm_reasons": severe_harm_reasons,
         "comparisons": {
             key: (
-                None
-                if value is None
-                else round(float(value), 6)
+                None if value is None else round(float(value), 6)
             )
             for key, value in comparisons.items()
         },
@@ -540,40 +559,28 @@ def main():
     parser.add_argument(
         "--tool",
         required=True,
-        choices=[
-            "denoise",
-            "deblur",
-            "enhance_lowlight",
-        ],
+        choices=["denoise", "deblur", "enhance_lowlight"],
     )
-    parser.add_argument(
-        "--attempt",
-        type=int,
-        default=1,
-    )
-    parser.add_argument(
-        "--max_attempts",
-        type=int,
-        default=2,
-    )
+    parser.add_argument("--attempt", type=int, default=1)
+    parser.add_argument("--max_attempts", type=int, default=2)
     parser.add_argument(
         "--deblur_min_sharpness_gain",
         type=float,
-        default=DEFAULT_THRESHOLDS[
-            "deblur_min_sharpness_gain"
-        ],
+        default=DEFAULT_THRESHOLDS["deblur_min_sharpness_gain"],
     )
     parser.add_argument(
         "--max_temporal_residual_ratio",
         type=float,
-        default=DEFAULT_THRESHOLDS[
-            "max_temporal_residual_ratio"
-        ],
+        default=DEFAULT_THRESHOLDS["max_temporal_residual_ratio"],
     )
     parser.add_argument(
-        "--report",
-        default=None,
+        "--min_colorfulness_retention_ratio",
+        type=float,
+        default=DEFAULT_THRESHOLDS[
+            "min_colorfulness_retention_ratio"
+        ],
     )
+    parser.add_argument("--report", default=None)
     args = parser.parse_args()
 
     report = evaluate_quality(
@@ -589,35 +596,23 @@ def main():
             "max_temporal_residual_ratio": (
                 args.max_temporal_residual_ratio
             ),
+            "min_colorfulness_retention_ratio": (
+                args.min_colorfulness_retention_ratio
+            ),
         },
     )
 
     if args.report:
-        report_path = (
-            Path(args.report)
-            .expanduser()
-            .resolve()
-        )
+        report_path = Path(args.report).expanduser().resolve()
     else:
         report_path = (
-            Path(args.output_dir)
-            .expanduser()
-            .resolve()
-            .parent
+            Path(args.output_dir).expanduser().resolve().parent
             / "quality_report.json"
         )
 
-    report_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
-        json.dumps(
-            report,
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
 

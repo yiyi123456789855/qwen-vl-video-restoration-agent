@@ -45,28 +45,84 @@ def load_tensor(path: Path, channels: int) -> torch.Tensor:
     )
 
 
-def save_tensor(tensor: torch.Tensor, path: Path) -> None:
+def tensor_to_uint8(tensor: torch.Tensor) -> np.ndarray:
     tensor = tensor.detach().cpu().clamp(0.0, 1.0)
     if tensor.ndim == 4:
+        if tensor.shape[0] != 1:
+            raise ValueError(
+                f"只支持batch=1的预测，实际形状：{tuple(tensor.shape)}"
+            )
         tensor = tensor[0]
+    if tensor.ndim != 3:
+        raise ValueError(f"预测张量必须是CHW，实际：{tuple(tensor.shape)}")
 
-    array = (
+    return (
         tensor.mul(255.0)
         .round()
         .to(torch.uint8)
         .numpy()
     )
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if array.shape[0] == 1:
-        Image.fromarray(array[0], mode="L").save(path)
-    elif array.shape[0] == 3:
+
+def has_meaningful_chroma(path: Path) -> bool:
+    """Return True only when an input contains meaningful colour content."""
+    with Image.open(path) as image:
+        rgb = np.asarray(image.convert("RGB"), dtype=np.int16)
+
+    channel_range = rgb.max(axis=2) - rgb.min(axis=2)
+    mean_range = float(channel_range.mean())
+    coloured_fraction = float(np.mean(channel_range >= 6))
+    return mean_range >= 2.0 and coloured_fraction >= 0.05
+
+
+def save_prediction(
+    tensor: torch.Tensor,
+    source_path: Path,
+    target_path: Path,
+    preserve_chroma: bool,
+) -> bool:
+    """Save a prediction and optionally recombine denoised Y with input CbCr.
+
+    A one-channel checkpoint is a luminance denoiser. For a genuinely colour
+    input, saving that tensor directly would silently turn the output gray.
+    Recombining the predicted luminance with the source chroma preserves colour
+    while keeping the learned model unchanged.
+
+    Returns True when chroma recombination was applied.
+    """
+    array = tensor_to_uint8(tensor)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if array.shape[0] == 3:
         Image.fromarray(
             np.transpose(array, (1, 2, 0)),
             mode="RGB",
-        ).save(path)
-    else:
+        ).save(target_path)
+        return False
+
+    if array.shape[0] != 1:
         raise ValueError(f"无法保存的张量形状：{array.shape}")
+
+    luminance = Image.fromarray(array[0], mode="L")
+    should_preserve = preserve_chroma and has_meaningful_chroma(source_path)
+    if not should_preserve:
+        luminance.save(target_path)
+        return False
+
+    with Image.open(source_path) as source_image:
+        source_ycbcr = source_image.convert("YCbCr")
+        _, cb, cr = source_ycbcr.split()
+
+    if cb.size != luminance.size:
+        cb = cb.resize(luminance.size, Image.Resampling.BILINEAR)
+        cr = cr.resize(luminance.size, Image.Resampling.BILINEAR)
+
+    restored_rgb = Image.merge(
+        "YCbCr",
+        (luminance, cb, cr),
+    ).convert("RGB")
+    restored_rgb.save(target_path)
+    return True
 
 
 class VideoDenoiser:
@@ -80,18 +136,15 @@ class VideoDenoiser:
         base: int = 64,
         tile: int = 512,
         overlap: int = 128,
+        preserve_chroma: bool = True,
     ):
         self.script_path = Path(test_script).expanduser().resolve()
         self.weights_path = Path(weights).expanduser().resolve()
 
         if not self.script_path.is_file():
-            raise FileNotFoundError(
-                f"测试脚本不存在：{self.script_path}"
-            )
+            raise FileNotFoundError(f"测试脚本不存在：{self.script_path}")
         if not self.weights_path.is_file():
-            raise FileNotFoundError(
-                f"去噪权重不存在：{self.weights_path}"
-            )
+            raise FileNotFoundError(f"去噪权重不存在：{self.weights_path}")
         if device.startswith("cuda") and not torch.cuda.is_available():
             raise RuntimeError("指定了CUDA，但PyTorch未检测到GPU")
         if overlap < 0 or overlap >= tile:
@@ -100,6 +153,7 @@ class VideoDenoiser:
         self.device = device
         self.tile = tile
         self.overlap = overlap
+        self.preserve_chroma = preserve_chroma
         self.runtime = load_test_module(self.script_path)
 
         checkpoint = torch.load(
@@ -127,6 +181,10 @@ class VideoDenoiser:
             raise ValueError(
                 f"frames必须是正奇数，实际为{self.frames}"
             )
+        if self.channels not in {1, 3}:
+            raise ValueError(
+                f"checkpoint channels只能是1或3，实际为{self.channels}"
+            )
 
         self.radius = self.frames // 2
         self.model = self.runtime.VideoStackUNet(
@@ -149,6 +207,7 @@ class VideoDenoiser:
 
         target_dir.mkdir(parents=True, exist_ok=True)
         started = time.perf_counter()
+        chroma_preserved_frames = 0
 
         with torch.inference_mode():
             for center, center_path in enumerate(frame_paths):
@@ -170,10 +229,25 @@ class VideoDenoiser:
                     tile=self.tile,
                     overlap=self.overlap,
                 )
-                save_tensor(prediction, target_dir / center_path.name)
+                chroma_preserved = save_prediction(
+                    prediction,
+                    center_path,
+                    target_dir / center_path.name,
+                    preserve_chroma=(
+                        self.preserve_chroma and self.channels == 1
+                    ),
+                )
+                chroma_preserved_frames += int(chroma_preserved)
 
         if self.device.startswith("cuda"):
             torch.cuda.synchronize()
+
+        if self.channels == 3:
+            color_strategy = "native_rgb_denoising"
+        elif chroma_preserved_frames:
+            color_strategy = "denoise_luminance_preserve_input_chroma"
+        else:
+            color_strategy = "grayscale_luminance_denoising"
 
         return {
             "input_dir": str(source_dir),
@@ -184,11 +258,11 @@ class VideoDenoiser:
             "base": self.base,
             "tile": self.tile,
             "overlap": self.overlap,
+            "preserve_chroma": self.preserve_chroma,
+            "chroma_preserved_frames": chroma_preserved_frames,
+            "color_strategy": color_strategy,
             "output_frames": len(frame_paths),
-            "runtime_seconds": round(
-                time.perf_counter() - started,
-                3,
-            ),
+            "runtime_seconds": round(time.perf_counter() - started, 3),
         }
 
 
@@ -204,6 +278,11 @@ def main():
     parser.add_argument("--base", type=int, default=64)
     parser.add_argument("--tile", type=int, default=512)
     parser.add_argument("--overlap", type=int, default=128)
+    parser.add_argument(
+        "--no_preserve_chroma",
+        action="store_true",
+        help="关闭单通道模型的输入色度回填（仅用于消融实验）",
+    )
     args = parser.parse_args()
 
     denoiser = VideoDenoiser(
@@ -215,11 +294,9 @@ def main():
         base=args.base,
         tile=args.tile,
         overlap=args.overlap,
+        preserve_chroma=not args.no_preserve_chroma,
     )
-    report = denoiser.run_sequence(
-        args.input_dir,
-        args.output_dir,
-    )
+    report = denoiser.run_sequence(args.input_dir, args.output_dir)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
